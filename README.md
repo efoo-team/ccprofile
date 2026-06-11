@@ -121,9 +121,7 @@ ccprofile is built on `claude setup-token`, whose long-lived tokens are **delibe
 - **`/status` → Usage tab shows no plan utilization** in token-authenticated sessions (same scope restriction). Check usage on claude.ai instead.
 - **Remote Control is unavailable** in token-authenticated sessions; it requires a full-scope login token.
 - **Tokens last up to 1 year but can die earlier** (password change, logout-all). The recorded expiry is a hint, not a guarantee — `ccprofile doctor` probes the server and tells live tokens apart from revoked ones.
-- **`claude --bare` does not read `CLAUDE_CODE_OAUTH_TOKEN`.**
-- **Subscription accounting:** from June 15, 2026, `claude -p` / Agent SDK usage on subscription plans draws from a separate monthly Agent SDK credit.
-- **direnv only sees shell-launched processes.** Apps started outside a hooked shell (GUI launchers) bypass the routing.
+- **Routing only applies to shell-launched processes.** direnv activates the token when a hooked shell enters the directory — apps launched outside a hooked shell (GUI launchers) bypass it, and `claude --bare` does not read `CLAUDE_CODE_OAUTH_TOKEN` at all.
 - **Higher-precedence auth wins silently.** `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper`, and Bedrock/Vertex/Foundry env vars all outrank the token — `ccprofile doctor` flags them.
 - **macOS only** for now (the token store is the macOS Keychain).
 
