@@ -1,0 +1,48 @@
+{
+  "name": "@efoo/ccprofile",
+  "version": "0.1.0",
+  "description": "Per-directory Claude Code account routing via CLAUDE_CODE_OAUTH_TOKEN, direnv, and macOS Keychain",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/efoo-team/ccprofile.git"
+  },
+  "homepage": "https://github.com/efoo-team/ccprofile#readme",
+  "bugs": {
+    "url": "https://github.com/efoo-team/ccprofile/issues"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "account",
+    "profile",
+    "direnv",
+    "keychain",
+    "cli"
+  ],
+  "bin": {
+    "ccprofile": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}
