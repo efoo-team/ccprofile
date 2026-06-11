@@ -4,6 +4,19 @@ Per-directory Claude Code account routing via `CLAUDE_CODE_OAUTH_TOKEN`, direnv,
 
 `ccprofile` lets you run **multiple Claude Code accounts in parallel** — one per terminal, one per project — with zero manual switching. It never touches Claude Code's own Keychain entry, so there is no global "active account" to corrupt.
 
+## 🤖 Install with an AI agent
+
+Paste this prompt into Claude Code, Cursor, or any coding agent:
+
+```
+Install and configure ccprofile by following the instructions here:
+https://raw.githubusercontent.com/efoo-team/ccprofile/main/docs/install-for-agents.md
+```
+
+The agent will check prerequisites (direnv, hooks), install the CLI, ask
+whether you want shell completion, and walk you through registering accounts —
+only the browser OAuth step needs your hands.
+
 ## Why
 
 Claude Code stores its OAuth credentials in a single macOS Keychain entry, shared across every `CLAUDE_CONFIG_DIR` profile ([#20553](https://github.com/anthropics/claude-code/issues/20553)). Switcher-style tools work around this by swapping that entry in place — which breaks down the moment two sessions with different accounts run at the same time (in-session token refresh writes the old account back).
