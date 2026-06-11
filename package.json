@@ -1,6 +1,6 @@
 {
   "name": "@efoo/ccprofile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Per-directory Claude Code account routing via CLAUDE_CODE_OAUTH_TOKEN, direnv, and macOS Keychain",
   "type": "module",
   "license": "MIT",
