@@ -15,7 +15,7 @@ should be. Keep commands, file paths, and error messages verbatim.
 ccprofile lets the user run **multiple Claude Code accounts in parallel**, one
 per project directory. It stores one long-lived OAuth token per account in the
 macOS Keychain and writes a self-contained `.envrc` per project; direnv exports
-`CLAUDE_CODE_OAUTH_TOKEN` on directory entry, which outranks the normal
+`ANTHROPIC_AUTH_TOKEN` on directory entry, which outranks the normal
 `/login` in Claude Code's auth precedence. Directories without a link fall back
 to the user's normal login. There is no global "active account" — nothing to
 switch, nothing to corrupt.
@@ -105,8 +105,8 @@ ccprofile doctor
 
 Everything should be ✓ — doctor also probes the server to confirm each token
 is live (not revoked). Then have the user confirm end-to-end: open a terminal,
-`cd` into a linked directory (direnv should print `export +CLAUDE_CODE_OAUTH_TOKEN`),
-run `claude`, and check `/status` shows `Auth token: CLAUDE_CODE_OAUTH_TOKEN`.
+`cd` into a linked directory (direnv should print `export +ANTHROPIC_AUTH_TOKEN`),
+run `claude`, and check `/status` shows `Auth token: ANTHROPIC_AUTH_TOKEN`.
 
 ## Limitations you must tell the user about
 
@@ -124,8 +124,8 @@ These come from `claude setup-token` tokens being deliberately inference-only
   authentication starts failing.
 - direnv only affects shell-launched processes; GUI-launched apps bypass the
   routing.
-- `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `apiKeyHelper` silently
-  override the routing — `doctor` flags them.
+- Bedrock / Vertex / Foundry provider env vars silently override the routing —
+  `doctor` flags them.
 
 ## Command reference
 

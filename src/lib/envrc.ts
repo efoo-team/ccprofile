@@ -17,7 +17,10 @@ export function renderBlock(profile: string, service: string, account: string): 
   return [
     BEGIN,
     `# profile: ${profile}`,
-    `export CLAUDE_CODE_OAUTH_TOKEN="$(security find-generic-password -w -s '${service}' -a '${account}' 2>/dev/null)"`,
+    `_ccprofile_token="$(security find-generic-password -w -s '${service}' -a '${account}' 2>/dev/null)"`,
+    `export ANTHROPIC_AUTH_TOKEN="$_ccprofile_token"`,
+    `unset CLAUDE_CODE_OAUTH_TOKEN`,
+    `unset _ccprofile_token`,
     END,
     "",
   ].join("\n");

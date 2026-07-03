@@ -92,6 +92,9 @@ export async function addCommand(argv: string[]): Promise<number> {
 
   console.log(ok(`Profile ${bold(name)} saved (Keychain: ${KEYCHAIN_SERVICE}/${name}).`));
   console.log(dim(`Token recorded as expiring at ${expiresAt} (setup-token issues 1-year tokens).`));
+  if (values.force) {
+    console.log(warn("Existing shells in linked directories may still export the old token. Run `direnv reload` there and restart Claude Code."));
+  }
   console.log(`\nNext: route a project directory to this account:\n  ${cyan(`ccprofile link ${name} <project-dir>`)}`);
   return 0;
 }

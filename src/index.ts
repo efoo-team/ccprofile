@@ -31,7 +31,7 @@ ${bold("Commands")}
 ${bold("Typical flow")}
   ccprofile add work --email you@company.example
   ccprofile link work ~/src/my-project
-  cd ~/src/my-project && claude   # runs as "work" via CLAUDE_CODE_OAUTH_TOKEN
+  cd ~/src/my-project && claude   # runs as "work" via ANTHROPIC_AUTH_TOKEN
 `;
 
 async function main(): Promise<number> {

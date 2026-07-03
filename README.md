@@ -1,6 +1,6 @@
 # ccprofile
 
-Per-directory Claude Code account routing via `CLAUDE_CODE_OAUTH_TOKEN`, direnv, and the macOS Keychain.
+Per-directory Claude Code account routing via `ANTHROPIC_AUTH_TOKEN`, direnv, and the macOS Keychain.
 
 `ccprofile` lets you run **multiple Claude Code accounts in parallel** — one per terminal, one per project — with zero manual switching. It never touches Claude Code's own Keychain entry, so there is no global "active account" to corrupt.
 
@@ -24,8 +24,8 @@ Claude Code stores its OAuth credentials in a single macOS Keychain entry, share
 `ccprofile` takes the declarative route instead:
 
 - Each account's **long-lived OAuth token** (`claude setup-token`, valid ~1 year) is stored in the Keychain under ccprofile's own namespace — one entry per profile, no sharing, no swapping.
-- `ccprofile link` writes a **self-contained `.envrc`** that exports `CLAUDE_CODE_OAUTH_TOKEN` straight from the Keychain. direnv activates it when you enter the directory. No node/npx in the hot path.
-- `CLAUDE_CODE_OAUTH_TOKEN` outranks the stored login in Claude Code's [documented auth precedence](https://code.claude.com/docs/en/authentication#authentication-precedence), so linked directories route to their account and everywhere else falls back to your normal `/login`.
+- `ccprofile link` writes a **self-contained `.envrc`** that exports the token as `ANTHROPIC_AUTH_TOKEN` straight from the Keychain. direnv activates it when you enter the directory. No node/npx in the hot path.
+- `ANTHROPIC_AUTH_TOKEN` outranks the stored login in Claude Code's [documented auth precedence](https://code.claude.com/docs/en/authentication#authentication-precedence), so linked directories route to their account and everywhere else falls back to your normal `/login`.
 
 Auth state lives in each process's environment — parallel sessions cannot interfere with each other by construction.
 
@@ -58,7 +58,7 @@ ccprofile link work
 ccprofile link work ~/src/my-project
 
 # 3. Done — any claude launched in that directory (and below) runs as "work"
-claude        # /status shows "Auth token: CLAUDE_CODE_OAUTH_TOKEN"
+claude        # /status shows "Auth token: ANTHROPIC_AUTH_TOKEN"
 ```
 
 Repeat with `ccprofile add personal` etc. Different terminals in different directories run different accounts concurrently.
@@ -73,7 +73,7 @@ Repeat with `ccprofile add personal` etc. Different terminals in different direc
 | `ccprofile unlink [dir]` | Remove the managed block (deletes `.envrc` if nothing else remains) |
 | `ccprofile token <name>` | Print the stored token to stdout (for scripting — handle with care) |
 | `ccprofile remove <name>` | Delete the profile and its Keychain entry |
-| `ccprofile doctor [dir]` | Diagnose overriding env vars (`ANTHROPIC_API_KEY` etc.), `apiKeyHelper`, expiry, token liveness, broken links. `--offline` skips the server probe |
+| `ccprofile doctor [dir]` | Diagnose provider overrides, stale/missing active token env, expiry, token liveness, broken links. `--offline` skips the server probe |
 | `ccprofile completion <shell>` | Print a completion script for fish, zsh, or bash |
 
 ## Shell completion
@@ -102,7 +102,10 @@ macOS Keychain               service "ccprofile", one entry per profile (the sec
 
   # >>> ccprofile managed >>>
   # profile: work
-  export CLAUDE_CODE_OAUTH_TOKEN="$(security find-generic-password -w -s 'ccprofile' -a 'work' 2>/dev/null)"
+  _ccprofile_token="$(security find-generic-password -w -s 'ccprofile' -a 'work' 2>/dev/null)"
+  export ANTHROPIC_AUTH_TOKEN="$_ccprofile_token"
+  unset CLAUDE_CODE_OAUTH_TOKEN
+  unset _ccprofile_token
   # <<< ccprofile managed <<<
 ```
 
@@ -110,6 +113,7 @@ Notes:
 
 - Tokens are written to the Keychain via `security -i` (stdin), so secrets never appear in `ps` output.
 - The `.envrc` block is **self-contained**: direnv re-evaluates it on every directory entry, and it must stay fast and dependency-free. ccprofile is only needed for CRUD operations.
+- Claude Code v2.1.199 treats `CLAUDE_CODE_OAUTH_TOKEN` as suitable for SDK/non-interactive automation, but interactive TUI sessions still consult `/login` account policy and quota. ccprofile therefore injects the same setup-token as `ANTHROPIC_AUTH_TOKEN`, which the interactive TUI uses as the active bearer token.
 - Add `.envrc` to your project's `.gitignore` — it is machine-local.
 
 ## Limitations — the price of parallel accounts
@@ -121,8 +125,8 @@ ccprofile is built on `claude setup-token`, whose long-lived tokens are **delibe
 - **`/status` → Usage tab shows no plan utilization** in token-authenticated sessions (same scope restriction). Check usage on claude.ai instead.
 - **Remote Control is unavailable** in token-authenticated sessions; it requires a full-scope login token.
 - **Tokens last up to 1 year but can die earlier** (password change, logout-all). The recorded expiry is a hint, not a guarantee — `ccprofile doctor` probes the server and tells live tokens apart from revoked ones.
-- **Routing only applies to shell-launched processes.** direnv activates the token when a hooked shell enters the directory — apps launched outside a hooked shell (GUI launchers) bypass it, and `claude --bare` does not read `CLAUDE_CODE_OAUTH_TOKEN` at all.
-- **Higher-precedence auth wins silently.** `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `apiKeyHelper`, and Bedrock/Vertex/Foundry env vars all outrank the token — `ccprofile doctor` flags them.
+- **Routing only applies to shell-launched processes.** direnv activates the token when a hooked shell enters the directory; apps launched outside a hooked shell (GUI launchers) bypass it.
+- **Cloud provider auth wins silently.** Bedrock/Vertex/Foundry env vars outrank `ANTHROPIC_AUTH_TOKEN`; `ccprofile doctor` flags them.
 - **macOS only** for now (the token store is the macOS Keychain).
 
 ## Development
@@ -133,6 +137,22 @@ pnpm build       # tsc → dist/
 pnpm test        # vitest
 node dist/index.js --help
 ```
+
+## Release
+
+Releases are automated with GitHub Actions + semantic-release.
+
+- Merging to `main` runs CI and then `semantic-release`.
+- Versioning is derived from Conventional Commits:
+  - `fix:` / `perf:` -> patch release
+  - `feat:` -> minor release
+  - `feat!:` or `BREAKING CHANGE:` -> major release
+  - `docs:` / `test:` / `ci:` / `chore:` -> no npm release
+- Do not manually edit `package.json` version for normal releases; semantic-release updates the published package version.
+- npm publishing uses trusted publishing (OIDC). Configure npm package `@efoo/ccprofile` with GitHub trusted publisher:
+  - repository: `efoo-team/ccprofile`
+  - workflow: `.github/workflows/release.yml`
+  - environment: none
 
 ## License
 

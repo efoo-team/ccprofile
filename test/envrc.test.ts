@@ -13,8 +13,11 @@ describe("renderBlock", () => {
     expect(block).toContain("# >>> ccprofile managed >>>");
     expect(block).toContain("# profile: work");
     expect(block).toContain(
-      `export CLAUDE_CODE_OAUTH_TOKEN="$(security find-generic-password -w -s 'ccprofile' -a 'work' 2>/dev/null)"`,
+      `_ccprofile_token="$(security find-generic-password -w -s 'ccprofile' -a 'work' 2>/dev/null)"`,
     );
+    expect(block).toContain(`export ANTHROPIC_AUTH_TOKEN="$_ccprofile_token"`);
+    expect(block).toContain("unset CLAUDE_CODE_OAUTH_TOKEN");
+    expect(block).toContain("unset _ccprofile_token");
     expect(block).toContain("# <<< ccprofile managed <<<");
     expect(block.endsWith("\n")).toBe(true);
   });

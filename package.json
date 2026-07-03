@@ -1,8 +1,9 @@
 {
   "name": "@efoo/ccprofile",
   "version": "0.1.1",
-  "description": "Per-directory Claude Code account routing via CLAUDE_CODE_OAUTH_TOKEN, direnv, and macOS Keychain",
+  "description": "Per-directory Claude Code account routing via ANTHROPIC_AUTH_TOKEN, direnv, and macOS Keychain",
   "type": "module",
+  "packageManager": "pnpm@10.33.4",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -38,10 +39,16 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "release": "semantic-release",
     "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/github": "^12.0.9",
+    "@semantic-release/npm": "^13.1.5",
+    "@semantic-release/release-notes-generator": "^14.1.1",
     "@types/node": "^22.10.0",
+    "semantic-release": "^25.0.5",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
   }

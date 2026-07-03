@@ -10,16 +10,14 @@ import { probeToken } from "../lib/probe.js";
 import { bold, fail, ok, warn } from "../lib/format.js";
 
 /**
- * Env vars that outrank CLAUDE_CODE_OAUTH_TOKEN in Claude Code's documented
- * authentication precedence. If any is set, ccprofile routing is silently
- * bypassed — that is the failure mode this command exists to catch.
+ * Env vars that outrank ccprofile's managed ANTHROPIC_AUTH_TOKEN in Claude
+ * Code's documented authentication precedence. If any is set, ccprofile
+ * routing is bypassed before the token is considered.
  */
 const OVERRIDING_ENV_VARS = [
   "CLAUDE_CODE_USE_BEDROCK",
   "CLAUDE_CODE_USE_VERTEX",
   "CLAUDE_CODE_USE_FOUNDRY",
-  "ANTHROPIC_AUTH_TOKEN",
-  "ANTHROPIC_API_KEY",
 ];
 
 export async function doctorCommand(argv: string[]): Promise<number> {
@@ -57,7 +55,7 @@ export async function doctorCommand(argv: string[]): Promise<number> {
 
   for (const envVar of OVERRIDING_ENV_VARS) {
     if (process.env[envVar] !== undefined) {
-      console.log(fail(`${envVar} is set: it overrides CLAUDE_CODE_OAUTH_TOKEN and bypasses ccprofile routing.`));
+      console.log(fail(`${envVar} is set: it overrides ANTHROPIC_AUTH_TOKEN and bypasses ccprofile routing.`));
       problems += 1;
     }
   }
@@ -68,8 +66,8 @@ export async function doctorCommand(argv: string[]): Promise<number> {
     try {
       const settings = JSON.parse(readFileSync(settingsPath, "utf8")) as Record<string, unknown>;
       if (settings.apiKeyHelper !== undefined) {
-        console.log(fail(`apiKeyHelper is configured in ${settingsPath}: it overrides CLAUDE_CODE_OAUTH_TOKEN.`));
-        problems += 1;
+        console.log(warn(`apiKeyHelper is configured in ${settingsPath}; linked ccprofile directories use ANTHROPIC_AUTH_TOKEN, which takes precedence.`));
+        warnings += 1;
       }
     } catch {
       console.log(warn(`Could not parse ${settingsPath}.`));
@@ -124,6 +122,26 @@ export async function doctorCommand(argv: string[]): Promise<number> {
       console.log(ok(`${envrcPath} exists but has no ccprofile block (not managed here).`));
     } else if (config.profiles[linked]) {
       console.log(ok(`${bold(dir)} is linked to profile "${linked}".`));
+
+      if (dir === resolve(process.cwd())) {
+        const linkedProfile = config.profiles[linked];
+        const exportedToken = process.env.ANTHROPIC_AUTH_TOKEN;
+        if (exportedToken === undefined) {
+          console.log(fail("Current shell does not export ANTHROPIC_AUTH_TOKEN. Run: direnv reload"));
+          problems += 1;
+        } else {
+          const linkedToken = await keychain.getToken(
+            linkedProfile.keychain.service,
+            linkedProfile.keychain.account,
+          );
+          if (linkedToken !== null && exportedToken !== linkedToken) {
+            console.log(fail(`Current shell exports a different ANTHROPIC_AUTH_TOKEN than profile "${linked}". Run: direnv reload, then restart Claude Code.`));
+            problems += 1;
+          } else if (linkedToken !== null) {
+            console.log(ok(`Current shell exports profile "${linked}" token via ANTHROPIC_AUTH_TOKEN.`));
+          }
+        }
+      }
     } else {
       console.log(fail(`${envrcPath} references unknown profile "${linked}". Run: ccprofile link <profile> ${dir}`));
       problems += 1;

@@ -13,10 +13,10 @@ using three existing mechanisms instead of inventing new ones:
 2. The token is stored in the **macOS Keychain** under ccprofile's own namespace
    (service `ccprofile`, account = profile name).
 3. `ccprofile link` writes a **self-contained managed block** into the target
-   directory's `.envrc`; **direnv** exports `CLAUDE_CODE_OAUTH_TOKEN` on entry.
+   directory's `.envrc`; **direnv** exports `ANTHROPIC_AUTH_TOKEN` on entry.
 
-Claude Code's documented auth precedence makes this work: `CLAUDE_CODE_OAUTH_TOKEN`
-(#5) outranks the stored `/login` credentials (#6), and everywhere without the
+Claude Code's documented auth precedence makes this work: `ANTHROPIC_AUTH_TOKEN`
+(#2) outranks the stored `/login` credentials (#6), and everywhere without the
 env var falls back to the normal login. See
 <https://code.claude.com/docs/en/authentication#authentication-precedence>.
 
@@ -63,10 +63,14 @@ env var falls back to the normal login. See
     the scope — a different problem; do not conflate.
 - Tokens can be revoked before the recorded expiry (password change, logout-all).
   Recorded `expiresAt` is a hint; the doctor probe is the truth.
-- Auth overrides: `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`, `apiKeyHelper`,
-  and `CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY}` all outrank
-  `CLAUDE_CODE_OAUTH_TOKEN`. `doctor` must keep checking all of them.
-- `claude --bare` does not read `CLAUDE_CODE_OAUTH_TOKEN`.
+- `CLAUDE_CODE_OAUTH_TOKEN` is not enough for the interactive TUI on Claude
+  Code 2.1.199: `claude -p` / SDK-style runs use it, but interactive sessions
+  still consult `/login` account policy/quota and can hit the wrong account's
+  limits. The same setup-token works as `ANTHROPIC_AUTH_TOKEN`, which the
+  interactive TUI uses as the active bearer token. Keep the generated block on
+  `ANTHROPIC_AUTH_TOKEN` unless upstream behavior changes and is re-verified.
+- Auth overrides: `CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY}` outrank
+  `ANTHROPIC_AUTH_TOKEN`. `doctor` must keep checking them.
 
 ## Architecture map
 
@@ -92,9 +96,13 @@ test/*.test.ts          vitest; keychain/probe are tested with injected fakes �
 pnpm install
 pnpm build        # tsc → dist/   (bin: dist/index.js, shebang in src/index.ts)
 pnpm test         # vitest
+pnpm typecheck    # tsc --noEmit
 node dist/index.js <cmd>          # run locally
 npm install -g .                  # reinstall the global command after changes
 ```
+
+When changing code, tests, package metadata, CI, or release configuration, run
+`pnpm typecheck`, `pnpm test`, and `pnpm build` before reporting completion.
 
 Manual smoke tests that touch the real Keychain should use a throwaway profile
 name, an isolated `CCPROFILE_DIR=$(mktemp -d)`, and must clean up via
@@ -106,6 +114,16 @@ name, an isolated `CCPROFILE_DIR=$(mktemp -d)`, and must clean up via
   `ccprofile` is **not publishable**: npm blocks punctuation-only variants of
   the existing `cc-profile` package (an unrelated Claude Code tracing tool).
 - Scoped packages need `npm publish --access public`.
+- Releases are automated by `.github/workflows/release.yml` on pushes to
+  `main`. semantic-release derives the version from Conventional Commits,
+  creates the GitHub release/tag, and publishes to npm.
+- Do not manually bump `package.json` for normal releases. Use commit types:
+  `fix:` / `perf:` for patch, `feat:` for minor, and `!` or
+  `BREAKING CHANGE:` only when a major release is intended.
+- npm auth uses trusted publishing (OIDC), not a long-lived `NPM_TOKEN`.
+  The npm package must be configured with trusted publisher
+  `efoo-team/ccprofile`, workflow `.github/workflows/release.yml`, no
+  environment.
 
 ## Possible future work (deliberate non-goals today)
 
