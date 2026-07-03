@@ -104,7 +104,6 @@ macOS Keychain               service "ccprofile", one entry per profile (the sec
   # profile: work
   _ccprofile_token="$(security find-generic-password -w -s 'ccprofile' -a 'work' 2>/dev/null)"
   export ANTHROPIC_AUTH_TOKEN="$_ccprofile_token"
-  unset CLAUDE_CODE_OAUTH_TOKEN
   unset _ccprofile_token
   # <<< ccprofile managed <<<
 ```
@@ -113,7 +112,6 @@ Notes:
 
 - Tokens are written to the Keychain via `security -i` (stdin), so secrets never appear in `ps` output.
 - The `.envrc` block is **self-contained**: direnv re-evaluates it on every directory entry, and it must stay fast and dependency-free. ccprofile is only needed for CRUD operations.
-- Claude Code v2.1.199 treats `CLAUDE_CODE_OAUTH_TOKEN` as suitable for SDK/non-interactive automation, but interactive TUI sessions still consult `/login` account policy and quota. ccprofile therefore injects the same setup-token as `ANTHROPIC_AUTH_TOKEN`, which the interactive TUI uses as the active bearer token.
 - Add `.envrc` to your project's `.gitignore` — it is machine-local.
 
 ## Limitations — the price of parallel accounts
@@ -123,7 +121,7 @@ ccprofile is built on `claude setup-token`, whose long-lived tokens are **delibe
 - **No account identity introspection.** The token cannot answer "whose token is this?" — the OAuth profile endpoint rejects it (`user:profile` scope missing, see [#11985](https://github.com/anthropics/claude-code/issues/11985)). The `--email` you record is a self-declared label, not verified.
   *Verify identity once, at registration time:* make sure the browser is logged into the intended claude.ai account before `claude setup-token`, then send a couple of prompts from a linked directory and confirm on claude.ai (web) that the intended account's usage moved.
 - **`/status` → Usage tab shows no plan utilization** in token-authenticated sessions (same scope restriction). Check usage on claude.ai instead.
-- **Remote Control is unavailable** in token-authenticated sessions; it requires a full-scope login token.
+- **Remote Control is unavailable** in linked directories. Claude Code treats `ANTHROPIC_AUTH_TOKEN` sessions as API-key authentication, while Remote Control requires claude.ai subscription authentication.
 - **Tokens last up to 1 year but can die earlier** (password change, logout-all). The recorded expiry is a hint, not a guarantee — `ccprofile doctor` probes the server and tells live tokens apart from revoked ones.
 - **Routing only applies to shell-launched processes.** direnv activates the token when a hooked shell enters the directory; apps launched outside a hooked shell (GUI launchers) bypass it.
 - **Cloud provider auth wins silently.** Bedrock/Vertex/Foundry env vars outrank `ANTHROPIC_AUTH_TOKEN`; `ccprofile doctor` flags them.

@@ -117,8 +117,9 @@ These come from `claude setup-token` tokens being deliberately inference-only
   sure which account a profile is, verify once: send a couple of prompts from
   the linked directory and check on claude.ai (web) that the intended account's
   usage moved.
-- The `/status` Usage tab shows no plan utilization in token sessions; Remote
-  Control is unavailable there.
+- The `/status` Usage tab shows no plan utilization in token sessions.
+- Remote Control is unavailable in linked directories because Claude Code
+  treats `ANTHROPIC_AUTH_TOKEN` sessions as API-key authentication.
 - Tokens last up to 1 year but can be revoked earlier (password change,
   logout-all). `ccprofile doctor` detects this — suggest running it when
   authentication starts failing.

@@ -63,12 +63,11 @@ env var falls back to the normal login. See
     the scope — a different problem; do not conflate.
 - Tokens can be revoked before the recorded expiry (password change, logout-all).
   Recorded `expiresAt` is a hint; the doctor probe is the truth.
-- `CLAUDE_CODE_OAUTH_TOKEN` is not enough for the interactive TUI on Claude
-  Code 2.1.199: `claude -p` / SDK-style runs use it, but interactive sessions
-  still consult `/login` account policy/quota and can hit the wrong account's
-  limits. The same setup-token works as `ANTHROPIC_AUTH_TOKEN`, which the
-  interactive TUI uses as the active bearer token. Keep the generated block on
-  `ANTHROPIC_AUTH_TOKEN` unless upstream behavior changes and is re-verified.
+- Linked directories authenticate Claude Code with `ANTHROPIC_AUTH_TOKEN`.
+  The generated block must keep exporting that variable.
+- Remote Control is unavailable in linked directories because Claude Code
+  treats `ANTHROPIC_AUTH_TOKEN` sessions as API-key authentication, while
+  Remote Control requires claude.ai subscription authentication.
 - Auth overrides: `CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY}` outrank
   `ANTHROPIC_AUTH_TOKEN`. `doctor` must keep checking them.
 
