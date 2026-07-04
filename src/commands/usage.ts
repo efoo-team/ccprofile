@@ -17,11 +17,38 @@ import {
   type UsageReport,
   type UsageWindow,
 } from "../lib/claudeai.js";
-import { bold, dim, fail, red, table, warn, yellow } from "../lib/format.js";
+import { loadConfig } from "../lib/config.js";
+import { bold, cyan, dim, fail, red, table, warn, yellow } from "../lib/format.js";
 
 interface ProfileResult {
   profile: ChromeProfile;
   usage: AccountUsage;
+}
+
+/** A profile whose usage was fetched successfully (email + report available). */
+type SignedInResult = ProfileResult & { usage: Extract<AccountUsage, { ok: true }> };
+
+/**
+ * Maps a claude.ai account email to the ccprofile name registered for it, so a
+ * signed-in Chrome account that matches a stored profile is labelled with that
+ * profile's name. Matching is case-insensitive.
+ */
+function profileNamesByEmail(): Map<string, string> {
+  const byEmail = new Map<string, string>();
+  try {
+    for (const [name, entry] of Object.entries(loadConfig().profiles)) {
+      if (entry.email) byEmail.set(entry.email.toLowerCase(), name);
+    }
+  } catch {
+    // A malformed/unsupported config.json shouldn't sink the usage table;
+    // profile labelling is auxiliary, so degrade to unlabelled accounts.
+  }
+  return byEmail;
+}
+
+function matchedProfileName(email: string | null, byEmail: Map<string, string>): string | null {
+  if (email === null) return null;
+  return byEmail.get(email.toLowerCase()) ?? null;
 }
 
 export async function usageCommand(argv: string[]): Promise<number> {
@@ -64,12 +91,14 @@ export async function usageCommand(argv: string[]): Promise<number> {
   );
   spinner.stop();
 
+  const byEmail = profileNamesByEmail();
+
   if (values.json) {
-    console.log(JSON.stringify(results.map(toJson), null, 2));
+    console.log(JSON.stringify(results.map((r) => toJson(r, byEmail)), null, 2));
     return hasRealFailure(results) ? 1 : 0;
   }
 
-  return render(results);
+  return render(results, byEmail);
 }
 
 /**
@@ -97,25 +126,31 @@ async function loadUsage(
   }
 }
 
-function render(results: ProfileResult[]): number {
-  const header = ["ACCOUNT", "CHROME", "5-HOUR", "WEEK · ALL", "FABLE · WEEK"].map(bold);
-  const rows: string[][] = [header];
+function render(results: ProfileResult[], byEmail: Map<string, string>): number {
+  const signedIn: SignedInResult[] = [];
   const problems: string[] = [];
-
   for (const { profile, usage } of results) {
     if (usage.ok) {
-      rows.push([
-        usage.email ?? dim("(unknown)"),
-        dim(profile.name),
-        windowCell(usage.report.session),
-        windowCell(usage.report.weeklyAll),
-        windowCell(usage.report.fable),
-      ]);
+      signedIn.push({ profile, usage });
     } else if (usage.detail !== NOT_SIGNED_IN) {
       // A missing session is expected for stray Chrome profiles; only real
       // failures (expired session, Cloudflare block) are worth surfacing.
       problems.push(warn(`${profile.name}: ${usage.detail}`));
     }
+  }
+
+  const header = ["PROFILE", "ACCOUNT", "CHROME", "5-HOUR", "WEEK · ALL", "FABLE · WEEK"].map(bold);
+  const rows: string[][] = [header];
+  for (const { profile, usage } of sortByWeeklyReset(signedIn)) {
+    const name = matchedProfileName(usage.email, byEmail);
+    rows.push([
+      name === null ? dim("-") : cyan(name),
+      usage.email ?? dim("(unknown)"),
+      dim(profile.name),
+      windowCell(usage.report.session),
+      windowCell(usage.report.weeklyAll),
+      windowCell(usage.report.fable),
+    ]);
   }
 
   if (rows.length === 1 && problems.length === 0) {
@@ -128,6 +163,17 @@ function render(results: ProfileResult[]): number {
   if (rows.length > 1) console.log(table(rows));
   for (const problem of problems) console.log(problem);
   return problems.length > 0 ? 1 : 0;
+}
+
+/**
+ * Orders accounts by how soon their weekly (all-models) limit resets — the
+ * nearest reset first, the furthest last. Accounts with no weekly window sort
+ * to the end so a resolved figure never sits below a blank one.
+ */
+function sortByWeeklyReset(results: SignedInResult[]): SignedInResult[] {
+  const resetKey = (r: SignedInResult): number =>
+    r.usage.report.weeklyAll?.resetsAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
+  return [...results].sort((a, b) => resetKey(a) - resetKey(b));
 }
 
 function windowCell(window: UsageWindow | null): string {
@@ -154,12 +200,14 @@ function formatReset(date: Date): string {
   return `${md} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function toJson(result: ProfileResult): Record<string, unknown> {
+function toJson(result: ProfileResult, byEmail: Map<string, string>): Record<string, unknown> {
   const { profile, usage } = result;
+  const email = usage.ok ? usage.email : null;
   return {
+    profile: matchedProfileName(email, byEmail),
     chromeProfile: profile.name,
     chromeDir: profile.dir,
-    email: usage.ok ? usage.email : null,
+    email,
     error: usage.ok ? null : usage.detail,
     usage: usage.ok ? serializeReport(usage.report) : null,
   };
