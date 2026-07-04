@@ -28,6 +28,9 @@ ${bold("Commands")}
       --offline           usage limits (real inference probe), and broken links
       --model <alias>     --offline skips probes; --model pins the probe model
                           (default: fable, then haiku to isolate fable limits)
+  usage [--json]          Show claude.ai usage per account: 5-hour, weekly, and
+                          Fable-weekly percent + reset. Reads Chrome session
+                          cookies — no browser open or switch required
   completion <shell>      Print a completion script (fish, zsh, bash)
 
 ${bold("Typical flow")}
@@ -56,6 +59,8 @@ async function main(): Promise<number> {
       return (await import("./commands/token.js")).tokenCommand(rest);
     case "doctor":
       return (await import("./commands/doctor.js")).doctorCommand(rest);
+    case "usage":
+      return (await import("./commands/usage.js")).usageCommand(rest);
     case "completion":
       return (await import("./commands/completion.js")).completionCommand(rest);
     // Hidden helper for shell completions: prints profile names, one per line.
