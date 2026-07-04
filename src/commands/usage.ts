@@ -66,10 +66,19 @@ export async function usageCommand(argv: string[]): Promise<number> {
 
   if (values.json) {
     console.log(JSON.stringify(results.map(toJson), null, 2));
-    return 0;
+    return hasRealFailure(results) ? 1 : 0;
   }
 
   return render(results);
+}
+
+/**
+ * A profile that was never signed in is expected and not a failure; anything
+ * else (expired session, Cloudflare block, decrypt/read error) is, so the
+ * command exits non-zero for scripts even though the table still prints.
+ */
+function hasRealFailure(results: ProfileResult[]): boolean {
+  return results.some((r) => !r.usage.ok && r.usage.detail !== NOT_SIGNED_IN);
 }
 
 /** Decrypts one profile's cookies and fetches its usage; never throws. */
@@ -118,7 +127,7 @@ function render(results: ProfileResult[]): number {
 
   if (rows.length > 1) console.log(table(rows));
   for (const problem of problems) console.log(problem);
-  return 0;
+  return problems.length > 0 ? 1 : 0;
 }
 
 function windowCell(window: UsageWindow | null): string {

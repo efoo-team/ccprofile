@@ -154,13 +154,26 @@ export async function readRawClaudeCookies(
       const sidecar = `${cookiesDbPath}${suffix}`;
       if (existsSync(sidecar)) copyFileSync(sidecar, `${copy}${suffix}`);
     }
+    // Only cookies a browser would send to https://claude.ai/: the apex
+    // host-only cookie and `.claude.ai` domain cookies. A subdomain host-only
+    // cookie (e.g. foo.claude.ai) is not sent there and could otherwise shadow
+    // the real sessionKey/cf_clearance.
     const result = await run("/usr/bin/sqlite3", [
       "-json",
       copy,
       "SELECT name, hex(encrypted_value) AS enc FROM cookies " +
-        "WHERE host_key = 'claude.ai' OR host_key LIKE '%.claude.ai'",
+        "WHERE host_key = 'claude.ai' OR host_key = '.claude.ai'",
     ]);
-    if (result.code !== 0) return [];
+    // A non-zero exit means sqlite3 itself failed (locked DB, unsupported
+    // option). Surface it so loadUsage reports a per-profile error instead of
+    // silently rendering the profile as "not signed in".
+    if (result.code !== 0) {
+      throw new Error(
+        `sqlite3 failed to read Chrome cookies (exit ${result.code})${
+          result.stderr.trim() ? `: ${result.stderr.trim()}` : ""
+        }`,
+      );
+    }
     const out = result.stdout.trim();
     if (out === "") return [];
     return JSON.parse(out) as RawCookie[];

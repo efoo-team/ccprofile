@@ -141,11 +141,32 @@ describe("fetchAccountUsage", () => {
     expect(called).toBe(false);
   });
 
+  it("reports a missing org without calling the network", async () => {
+    let called = false;
+    const fetcher: JsonFetcher = async () => {
+      called = true;
+      return { status: 200, body: {} };
+    };
+    const result = await fetchAccountUsage({ sessionKey: "sk-ant-sid02-x" }, "UA", fetcher);
+    expect(result).toEqual({ ok: false, status: 0, detail: "no active organization cookie" });
+    expect(called).toBe(false);
+  });
+
   it("surfaces a non-200 bootstrap as a failure", async () => {
     const fetcher: JsonFetcher = async () => ({ status: 403, body: null });
     const result = await fetchAccountUsage(cookies, "UA", fetcher);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.status).toBe(403);
+  });
+
+  it("surfaces a non-200 usage endpoint after a successful bootstrap", async () => {
+    const fetcher: JsonFetcher = async (url) =>
+      url.endsWith("/bootstrap")
+        ? { status: 200, body: { account: { email_address: "you@example.com" } } }
+        : { status: 500, body: null };
+    const result = await fetchAccountUsage(cookies, "UA", fetcher);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.status).toBe(500);
   });
 
   it("converts a thrown fetch (e.g. timeout) into a failure instead of rejecting", async () => {
