@@ -25,7 +25,9 @@ ${bold("Commands")}
   token <name>            Print the stored token (for scripting; handle with care)
   remove <name> [--force] Delete a profile and its Keychain entry
   doctor [dir]            Diagnose overriding env vars, expiry, token liveness,
-      --offline           and broken links; --offline skips the server probe
+      --offline           usage limits (real inference probe), and broken links
+      --model <alias>     --offline skips probes; --model pins the probe model
+                          (default: fable, then haiku to isolate fable limits)
   completion <shell>      Print a completion script (fish, zsh, bash)
 
 ${bold("Typical flow")}

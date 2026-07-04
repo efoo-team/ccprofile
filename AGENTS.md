@@ -55,6 +55,11 @@ env var falls back to the normal login. See
   - No `user:profile` scope → the OAuth profile endpoint
     (`api.anthropic.com/api/oauth/profile`) returns `permission_error`.
     A "whoami" feature is **structurally impossible**; do not attempt one.
+  - The usage endpoint (`api.anthropic.com/api/oauth/usage`, what `/usage`
+    reads) is gated by the same `user:profile` scope: HTTP 403
+    `permission_error` (verified 2026-07-04). Reading remaining quota without
+    spending is **structurally impossible** — that is why doctor's usage probe
+    performs a real minimal inference instead.
   - `src/lib/probe.ts` exploits this: `permission_error` mentioning "scope"
     proves the token authenticated → **alive**; `authentication_error`/401 →
     revoked. An HTTP 200 + email branch exists for graceful handling but is not
@@ -63,6 +68,24 @@ env var falls back to the normal login. See
     the scope — a different problem; do not conflate.
 - Tokens can be revoked before the recorded expiry (password change, logout-all).
   Recorded `expiresAt` is a hint; the doctor probe is the truth.
+- fable has a separate usage budget (~50% of the plan, same 5h/1-week windows),
+  and fable usage also counts against the shared haiku/sonnet/opus pool
+  (owner-provided fact, July 2026). doctor's probe order exploits the nesting:
+  fable OK ⇒ everything OK; fable limited → probe haiku to tell "fable budget
+  exhausted" from "subscription window exhausted".
+- The usage probe (`src/lib/usage.ts`) is **default-on and deliberately spends
+  a tiny amount of quota**; it may also start an idle profile's 5-hour window.
+  Both are accepted — the owner wants idle windows restarted as early as
+  possible, so do not "optimize" this into an opt-in. `--offline` is the
+  opt-out; `--model` pins the probe model. Never add `--fallback-model` to the
+  probe invocation (it would silently succeed on another model and mask the
+  limit). Claude Code's error strings are not a stable API: classification
+  matches loosely and falls back to "unknown" (a warning), never a guess.
+  doctor checks all profiles concurrently (wall time = slowest profile);
+  each profile buffers its lines and blocks print in config order, and
+  per-profile steps stay sequential (the haiku cascade depends on the fable
+  result). checkProfile must never reject — a rejection before its print
+  turn would be an unhandled promise rejection.
 - Linked directories authenticate Claude Code with `ANTHROPIC_AUTH_TOKEN`.
   The generated block must keep exporting that variable.
 - Remote Control is unavailable in linked directories because Claude Code
@@ -83,6 +106,7 @@ src/lib/config.ts       ~/.ccprofile/config.json IO (CCPROFILE_DIR overrides for
 src/lib/keychain.ts     `security` wrapper; injectable Runner for tests
 src/lib/envrc.ts        managed-block render/upsert/remove/parse (pure functions)
 src/lib/probe.ts        server liveness probe (injectable fetch)
+src/lib/usage.ts        usage-limit probe: one real `claude -p` ping (injectable runner)
 src/lib/prompt.ts       hidden token paste, confirmations
 src/lib/format.ts       ANSI + table helpers (no deps; respects NO_COLOR)
 test/*.test.ts          vitest; keychain/probe are tested with injected fakes —

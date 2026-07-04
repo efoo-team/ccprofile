@@ -18,7 +18,7 @@ export const ok = (s: string): string => `${green("✓")} ${s}`;
 export const warn = (s: string): string => `${yellow("⚠")} ${s}`;
 export const fail = (s: string): string => `${red("✗")} ${s}`;
 
-function stripAnsi(s: string): string {
+export function stripAnsi(s: string): string {
   return s.replaceAll(new RegExp(`${ESC}\\[[0-9;]*m`, "g"), "");
 }
 

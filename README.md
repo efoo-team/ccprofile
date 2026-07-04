@@ -73,7 +73,7 @@ Repeat with `ccprofile add personal` etc. Different terminals in different direc
 | `ccprofile unlink [dir]` | Remove the managed block (deletes `.envrc` if nothing else remains) |
 | `ccprofile token <name>` | Print the stored token to stdout (for scripting — handle with care) |
 | `ccprofile remove <name>` | Delete the profile and its Keychain entry |
-| `ccprofile doctor [dir]` | Diagnose provider overrides, stale/missing active token env, expiry, token liveness, broken links. `--offline` skips the server probe |
+| `ccprofile doctor [dir]` | Diagnose provider overrides, stale/missing active token env, expiry, token liveness, usage limits (a minimal real inference per profile — fable first, haiku fallback), broken links. `--model <alias>` pins the probe model; `--offline` skips all server probes |
 | `ccprofile completion <shell>` | Print a completion script for fish, zsh, or bash |
 
 ## Shell completion
@@ -120,7 +120,7 @@ ccprofile is built on `claude setup-token`, whose long-lived tokens are **delibe
 
 - **No account identity introspection.** The token cannot answer "whose token is this?" — the OAuth profile endpoint rejects it (`user:profile` scope missing, see [#11985](https://github.com/anthropics/claude-code/issues/11985)). The `--email` you record is a self-declared label, not verified.
   *Verify identity once, at registration time:* make sure the browser is logged into the intended claude.ai account before `claude setup-token`, then send a couple of prompts from a linked directory and confirm on claude.ai (web) that the intended account's usage moved.
-- **`/status` → Usage tab shows no plan utilization** in token-authenticated sessions (same scope restriction). Check usage on claude.ai instead.
+- **`/status` → Usage tab shows no plan utilization** in token-authenticated sessions (same scope restriction — the usage endpoint also requires `user:profile`). Check usage on claude.ai, or run `ccprofile doctor`: it detects exhausted usage limits the only way these tokens allow, by sending one minimal real inference per profile (fable first; on a fable limit it retries with haiku to tell "fable's separate budget exhausted" from "subscription window exhausted"). The probe consumes a negligible amount of quota and starts the 5-hour window of an idle profile; use `--offline` if you don't want that.
 - **Remote Control is unavailable** in linked directories. Claude Code treats `ANTHROPIC_AUTH_TOKEN` sessions as API-key authentication, while Remote Control requires claude.ai subscription authentication.
 - **Tokens last up to 1 year but can die earlier** (password change, logout-all). The recorded expiry is a hint, not a guarantee — `ccprofile doctor` probes the server and tells live tokens apart from revoked ones.
 - **Routing only applies to shell-launched processes.** direnv activates the token when a hooked shell enters the directory; apps launched outside a hooked shell (GUI launchers) bypass it.
