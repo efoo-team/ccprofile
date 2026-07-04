@@ -8,6 +8,7 @@ export const SUBCOMMANDS: Array<{ name: string; description: string }> = [
   { name: "token", description: "Print the stored token" },
   { name: "remove", description: "Delete a profile and its Keychain entry" },
   { name: "doctor", description: "Diagnose configuration problems" },
+  { name: "usage", description: "Show claude.ai usage per account" },
   { name: "completion", description: "Print a shell completion script" },
   { name: "help", description: "Show help" },
 ];
@@ -48,7 +49,7 @@ complete -c ccprofile -n "__fish_seen_subcommand_from add" -l expires-at -r -d "
 complete -c ccprofile -n "__fish_seen_subcommand_from add" -l token -r -d "Provide the token directly"
 complete -c ccprofile -n "__fish_seen_subcommand_from add" -l force -d "Overwrite an existing profile"
 complete -c ccprofile -n "__fish_seen_subcommand_from add" -l no-setup -d "Skip launching claude setup-token"
-complete -c ccprofile -n "__fish_seen_subcommand_from list" -l json -d "JSON output"
+complete -c ccprofile -n "__fish_seen_subcommand_from list usage" -l json -d "JSON output"
 complete -c ccprofile -n "__fish_seen_subcommand_from remove" -l force -d "Skip confirmation"
 complete -c ccprofile -n __fish_use_subcommand -l help -d "Show help"
 complete -c ccprofile -n __fish_use_subcommand -l version -d "Show version"
@@ -93,7 +94,7 @@ ${describeLines}
     add)
       compadd -- --email --expires-at --token --force --no-setup
       ;;
-    list)
+    list|usage)
       compadd -- --json
       ;;
   esac
@@ -131,7 +132,7 @@ _ccprofile() {
       COMPREPLY=( \$(compgen -W "fish zsh bash" -- "\$cur") ) ;;
     add)
       COMPREPLY=( \$(compgen -W "--email --expires-at --token --force --no-setup" -- "\$cur") ) ;;
-    list)
+    list|usage)
       COMPREPLY=( \$(compgen -W "--json" -- "\$cur") ) ;;
   esac
 }
