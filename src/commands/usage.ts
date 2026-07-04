@@ -35,8 +35,13 @@ type SignedInResult = ProfileResult & { usage: Extract<AccountUsage, { ok: true 
  */
 function profileNamesByEmail(): Map<string, string> {
   const byEmail = new Map<string, string>();
-  for (const [name, entry] of Object.entries(loadConfig().profiles)) {
-    if (entry.email) byEmail.set(entry.email.toLowerCase(), name);
+  try {
+    for (const [name, entry] of Object.entries(loadConfig().profiles)) {
+      if (entry.email) byEmail.set(entry.email.toLowerCase(), name);
+    }
+  } catch {
+    // A malformed/unsupported config.json shouldn't sink the usage table;
+    // profile labelling is auxiliary, so degrade to unlabelled accounts.
   }
   return byEmail;
 }
