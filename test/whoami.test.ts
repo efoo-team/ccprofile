@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyActiveAccount } from "../src/commands/which.js";
+import { classifyActiveAccount } from "../src/commands/whoami.js";
 
 const base = {
   overrideVar: undefined,

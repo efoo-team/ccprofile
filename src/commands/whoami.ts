@@ -8,12 +8,12 @@ import { OVERRIDING_ENV_VARS } from "../lib/usage.js";
 import { bold, cyan, dim, fail, ok, warn } from "../lib/format.js";
 
 /**
- * `ccprofile which` answers one question fast: which account will Claude Code
+ * `ccprofile whoami` answers one question fast: which account will Claude Code
  * use in this shell, right now? Unlike `doctor` it runs no inference probes and
  * no liveness checks — just the local signals (env vars, the exported token,
  * and the current directory's link) — so it returns effectively instantly.
  */
-export async function whichCommand(argv: string[]): Promise<number> {
+export async function whoamiCommand(argv: string[]): Promise<number> {
   parseArgs({ args: argv, allowPositionals: true, options: {} });
   assertDarwin();
 
