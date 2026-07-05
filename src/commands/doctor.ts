@@ -144,10 +144,18 @@ async function reportCurrentLink(
   keychain: Keychain,
 ): Promise<number> {
   const envrcPath = join(dir, ".envrc");
-  if (!existsSync(envrcPath)) return 0;
+  let content: string;
+  try {
+    if (!existsSync(envrcPath)) return 0;
+    content = readFileSync(envrcPath, "utf8");
+  } catch {
+    // The .envrc vanished between the check and the read, or is unreadable —
+    // nothing to report, and doctor must not crash over a transient FS error.
+    return 0;
+  }
 
   console.log();
-  const linked = parseLinkedProfile(readFileSync(envrcPath, "utf8"));
+  const linked = parseLinkedProfile(content);
   if (linked === null) {
     console.log(ok(`${envrcPath} exists but has no ccprofile block (not managed here).`));
     return 0;
@@ -166,10 +174,17 @@ async function reportCurrentLink(
     console.log(fail(`This directory → profile "${linked}", but ANTHROPIC_AUTH_TOKEN is not exported in this shell. Run: direnv reload`));
     return 1;
   }
-  const linkedToken = await keychain.getToken(
-    linkedProfile.keychain.service,
-    linkedProfile.keychain.account,
-  );
+  let linkedToken: string | null = null;
+  try {
+    linkedToken = await keychain.getToken(
+      linkedProfile.keychain.service,
+      linkedProfile.keychain.account,
+    );
+  } catch {
+    // A Keychain hiccup (e.g. `security` failing) must not abort doctor; fall
+    // back to reporting the link without the token-match confirmation.
+    linkedToken = null;
+  }
   if (linkedToken !== null && exportedToken !== linkedToken) {
     console.log(fail(`This directory → profile "${linked}", but this shell exports a different ANTHROPIC_AUTH_TOKEN. Run: direnv reload, then restart Claude Code.`));
     return 1;

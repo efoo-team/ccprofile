@@ -71,8 +71,10 @@ ccprofile usage   # per-account plan utilization + reset times, straight from cl
 ```
 
 `ccprofile which` (alias `whoami`) answers "who am I running as here?" from local
-signals only — the exported `ANTHROPIC_AUTH_TOKEN` and the directory's link — so it
-returns immediately. `ccprofile usage` decrypts your Chrome claude.ai session cookies
+signals only, in Claude Code's own precedence order: a provider override
+(`CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY}`) wins first if set, otherwise the
+exported `ANTHROPIC_AUTH_TOKEN` matched against your registered profiles, then the
+directory's `.envrc` link — so it returns immediately. `ccprofile usage` decrypts your Chrome claude.ai session cookies
 to fetch the real 5-hour / weekly / Fable-weekly utilization for every signed-in
 account, ordered by whichever weekly limit resets soonest — without opening or
 switching the browser (you just need to be signed in to claude.ai in Chrome).
