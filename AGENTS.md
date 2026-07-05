@@ -54,11 +54,7 @@ env var falls back to the normal login. See
   reasons", per Claude Code `/doctor`). Consequences:
   - No `user:profile` scope → the OAuth profile endpoint
     (`api.anthropic.com/api/oauth/profile`) returns `permission_error`.
-    A **server-side** "whose token is this?" is structurally impossible; do not
-    attempt one against the setup-token. (`ccprofile which`/`whoami` answers a
-    deliberately different question — which *registered* profile the exported
-    `ANTHROPIC_AUTH_TOKEN` belongs to — by matching it against ccprofile's own
-    Keychain entries locally, with no network call. See `src/commands/which.ts`.)
+    A "whoami" feature is **structurally impossible**; do not attempt one.
   - The usage endpoint (`api.anthropic.com/api/oauth/usage`, what `/usage`
     reads) is gated by the same `user:profile` scope: HTTP 403
     `permission_error` (verified 2026-07-04). Reading remaining quota without
@@ -110,8 +106,8 @@ env var falls back to the normal login. See
 ```
 src/index.ts            entry; lazy-imports commands; hidden `_profiles` helper
                         (prints profile names for shell completion; config-only)
-src/commands/*.ts       one file per subcommand (add/list/link/unlink/which/
-                        token/remove/doctor/usage/completion)
+src/commands/*.ts       one file per subcommand (add/list/link/unlink/token/
+                        remove/doctor/usage/completion)
 src/lib/config.ts       ~/.ccprofile/config.json IO (CCPROFILE_DIR overrides for
                         tests), profile-name validation, expiry math
 src/lib/keychain.ts     `security` wrapper; injectable Runner for tests

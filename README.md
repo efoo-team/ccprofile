@@ -66,18 +66,16 @@ Repeat with `ccprofile add personal` etc. Different terminals in different direc
 ### Checking status
 
 ```sh
-ccprofile which   # which account does *this* shell/directory resolve to? (instant, no network)
-ccprofile usage   # per-account plan utilization + reset times, straight from claude.ai
+ccprofile doctor   # health of every profile + which account *this* directory resolves to (shown first)
+ccprofile usage    # per-account plan utilization + reset times, straight from claude.ai
 ```
 
-`ccprofile which` (alias `whoami`) answers "who am I running as here?" from local
-signals only, in Claude Code's own precedence order: a provider override
-(`CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY}`) wins first if set, otherwise the
-exported `ANTHROPIC_AUTH_TOKEN` matched against your registered profiles, then the
-directory's `.envrc` link — so it returns immediately. `ccprofile usage` decrypts your Chrome claude.ai session cookies
-to fetch the real 5-hour / weekly / Fable-weekly utilization for every signed-in
-account, ordered by whichever weekly limit resets soonest — without opening or
-switching the browser (you just need to be signed in to claude.ai in Chrome).
+`ccprofile doctor` prints the current directory's account at the top, before the
+per-profile probes, so a glance tells you which account is active here.
+`ccprofile usage` decrypts your Chrome claude.ai session cookies to fetch the real
+5-hour / weekly / Fable-weekly utilization for every signed-in account, ordered by
+whichever weekly limit resets soonest — without opening or switching the browser
+(you just need to be signed in to claude.ai in Chrome).
 
 ## Commands
 
@@ -87,7 +85,6 @@ switching the browser (you just need to be signed in to claude.ai in Chrome).
 | `ccprofile list [--json]` | Profiles with token presence and expiry countdown |
 | `ccprofile link <name> [dir]` | Write the managed `.envrc` block and `direnv allow` |
 | `ccprofile unlink [dir]` | Remove the managed block (deletes `.envrc` if nothing else remains) |
-| `ccprofile which` | Show which account this shell/directory resolves to right now — instant, no probes (alias: `whoami`) |
 | `ccprofile token <name>` | Print the stored token to stdout (for scripting — handle with care) |
 | `ccprofile remove <name>` | Delete the profile and its Keychain entry |
 | `ccprofile doctor [dir]` | Diagnose provider overrides, stale/missing active token env, expiry, token liveness, usage limits (a minimal real inference per profile — fable first, haiku fallback), broken links. `--model <alias>` pins the probe model; `--offline` skips all server probes |
@@ -136,7 +133,7 @@ Notes:
 
 ccprofile is built on `claude setup-token`, whose long-lived tokens are **deliberately scoped to inference only** ("for security reasons", per Claude Code's own `/doctor`). Several conveniences of a normal `/login` session are therefore unavailable in linked directories:
 
-- **No account identity introspection.** The token cannot answer "whose token is this?" — the OAuth profile endpoint rejects it (`user:profile` scope missing, see [#11985](https://github.com/anthropics/claude-code/issues/11985)). The `--email` you record is a self-declared label, not verified. (`ccprofile which` still names the *active* account, but locally — by matching the exported token against your registered profiles, never asking the server.)
+- **No account identity introspection.** The token cannot answer "whose token is this?" — the OAuth profile endpoint rejects it (`user:profile` scope missing, see [#11985](https://github.com/anthropics/claude-code/issues/11985)). The `--email` you record is a self-declared label, not verified.
   *Verify identity once, at registration time:* make sure the browser is logged into the intended claude.ai account before `claude setup-token`, then send a couple of prompts from a linked directory and confirm on claude.ai (web) that the intended account's usage moved.
 - **`/status` → Usage tab shows no plan utilization** in token-authenticated sessions (same scope restriction — the usage endpoint also requires `user:profile`). Check usage on claude.ai, or run `ccprofile doctor`: it detects exhausted usage limits the only way these tokens allow, by sending one minimal real inference per profile (fable first; on a fable limit it retries with haiku to tell "fable's separate budget exhausted" from "subscription window exhausted"). The probe consumes a negligible amount of quota and starts the 5-hour window of an idle profile; use `--offline` if you don't want that. To read *real* remaining quota without spending any, run `ccprofile usage`, which pulls per-account utilization straight from claude.ai using your signed-in Chrome session (no token probe, no window started).
 - **Remote Control is unavailable** in linked directories. Claude Code treats `ANTHROPIC_AUTH_TOKEN` sessions as API-key authentication, while Remote Control requires claude.ai subscription authentication.
