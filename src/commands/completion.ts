@@ -5,6 +5,7 @@ export const SUBCOMMANDS: Array<{ name: string; description: string }> = [
   { name: "list", description: "Show profiles, token presence, and expiry" },
   { name: "link", description: "Route a directory to a profile" },
   { name: "unlink", description: "Remove the managed .envrc block" },
+  { name: "which", description: "Show which account this shell resolves to" },
   { name: "token", description: "Print the stored token" },
   { name: "remove", description: "Delete a profile and its Keychain entry" },
   { name: "doctor", description: "Diagnose configuration problems" },
