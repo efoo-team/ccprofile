@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { daysRemaining, loadConfig, type ProfileEntry } from "../lib/config.js";
+import { daysRemaining, loadConfig, type Config, type ProfileEntry } from "../lib/config.js";
 import { parseLinkedProfile } from "../lib/envrc.js";
 import { Keychain } from "../lib/keychain.js";
 import { probeToken } from "../lib/probe.js";
@@ -57,6 +57,15 @@ export async function doctorCommand(argv: string[]): Promise<number> {
     }
   }
 
+  const config = loadConfig();
+  const keychain = new Keychain();
+
+  // Answer "which account is active here?" up front — it is cheap (one .envrc
+  // read plus at most one Keychain lookup) and is the thing users most often
+  // open doctor to check, so it must not sit behind the slow per-profile
+  // inference probes further down.
+  problems += await reportCurrentLink(dir, config, keychain);
+
   for (const envVar of OVERRIDING_ENV_VARS) {
     if (process.env[envVar] !== undefined) {
       console.log(fail(`${envVar} is set: it overrides ANTHROPIC_AUTH_TOKEN and bypasses ccprofile routing.`));
@@ -79,8 +88,6 @@ export async function doctorCommand(argv: string[]): Promise<number> {
     }
   }
 
-  const config = loadConfig();
-  const keychain = new Keychain();
   const profiles = Object.entries(config.profiles);
   if (profiles.length > 0) {
     const ctx: ProfileCheckContext = {
@@ -116,48 +123,77 @@ export async function doctorCommand(argv: string[]): Promise<number> {
     spinner.stop();
   }
 
-  const envrcPath = join(dir, ".envrc");
-  if (existsSync(envrcPath)) {
-    console.log();
-    const linked = parseLinkedProfile(readFileSync(envrcPath, "utf8"));
-    if (linked === null) {
-      console.log(ok(`${envrcPath} exists but has no ccprofile block (not managed here).`));
-    } else if (config.profiles[linked]) {
-      if (dir !== resolve(process.cwd())) {
-        console.log(ok(`${bold(dir)} → profile "${linked}"`));
-      } else {
-        const linkedProfile = config.profiles[linked];
-        const exportedToken = process.env.ANTHROPIC_AUTH_TOKEN;
-        if (exportedToken === undefined) {
-          console.log(fail(`This directory → profile "${linked}", but ANTHROPIC_AUTH_TOKEN is not exported in this shell. Run: direnv reload`));
-          problems += 1;
-        } else {
-          const linkedToken = await keychain.getToken(
-            linkedProfile.keychain.service,
-            linkedProfile.keychain.account,
-          );
-          if (linkedToken !== null && exportedToken !== linkedToken) {
-            console.log(fail(`This directory → profile "${linked}", but this shell exports a different ANTHROPIC_AUTH_TOKEN. Run: direnv reload, then restart Claude Code.`));
-            problems += 1;
-          } else if (linkedToken !== null) {
-            console.log(ok(`This directory → profile "${linked}" (ANTHROPIC_AUTH_TOKEN exported)`));
-          } else {
-            console.log(ok(`This directory → profile "${linked}"`));
-          }
-        }
-      }
-    } else {
-      console.log(fail(`${envrcPath} references unknown profile "${linked}". Run: ccprofile link <profile> ${dir}`));
-      problems += 1;
-    }
-  }
-
   console.log();
   if (problems > 0) {
     console.log(fail(`${problems} problem(s), ${warnings} warning(s).`));
     return 1;
   }
   console.log(ok(`No problems found (${warnings} warning(s)).`));
+  return 0;
+}
+
+/**
+ * Prints the "which account does this directory resolve to?" summary and
+ * returns how many problems it found. Kept intentionally cheap — one .envrc
+ * read plus at most one Keychain lookup — so it can run before the inference
+ * probes and give an instant answer.
+ */
+async function reportCurrentLink(
+  dir: string,
+  config: Config,
+  keychain: Keychain,
+): Promise<number> {
+  const envrcPath = join(dir, ".envrc");
+  let content: string;
+  try {
+    if (!existsSync(envrcPath)) return 0;
+    content = readFileSync(envrcPath, "utf8");
+  } catch {
+    // The .envrc vanished between the check and the read, or is unreadable —
+    // nothing to report, and doctor must not crash over a transient FS error.
+    return 0;
+  }
+
+  console.log();
+  const linked = parseLinkedProfile(content);
+  if (linked === null) {
+    console.log(ok(`${envrcPath} exists but has no ccprofile block (not managed here).`));
+    return 0;
+  }
+  const linkedProfile = config.profiles[linked];
+  if (linkedProfile === undefined) {
+    console.log(fail(`${envrcPath} references unknown profile "${linked}". Run: ccprofile link <profile> ${dir}`));
+    return 1;
+  }
+  if (dir !== resolve(process.cwd())) {
+    console.log(ok(`${bold(dir)} → profile "${linked}"`));
+    return 0;
+  }
+  const exportedToken = process.env.ANTHROPIC_AUTH_TOKEN;
+  if (exportedToken === undefined) {
+    console.log(fail(`This directory → profile "${linked}", but ANTHROPIC_AUTH_TOKEN is not exported in this shell. Run: direnv reload`));
+    return 1;
+  }
+  let linkedToken: string | null = null;
+  try {
+    linkedToken = await keychain.getToken(
+      linkedProfile.keychain.service,
+      linkedProfile.keychain.account,
+    );
+  } catch {
+    // A Keychain hiccup (e.g. `security` failing) must not abort doctor; fall
+    // back to reporting the link without the token-match confirmation.
+    linkedToken = null;
+  }
+  if (linkedToken !== null && exportedToken !== linkedToken) {
+    console.log(fail(`This directory → profile "${linked}", but this shell exports a different ANTHROPIC_AUTH_TOKEN. Run: direnv reload, then restart Claude Code.`));
+    return 1;
+  }
+  console.log(
+    linkedToken !== null
+      ? ok(`This directory → profile "${linked}" (ANTHROPIC_AUTH_TOKEN exported)`)
+      : ok(`This directory → profile "${linked}"`),
+  );
   return 0;
 }
 

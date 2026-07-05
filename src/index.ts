@@ -22,6 +22,8 @@ ${bold("Commands")}
   list [--json]           Show profiles, token presence, and expiry
   link <name> [dir]       Route a directory to a profile (writes .envrc, direnv allow)
   unlink [dir]            Remove the managed block from a directory's .envrc
+  which                   Show which account this shell/directory resolves to,
+                          instantly (no probes). Alias: whoami
   token <name>            Print the stored token (for scripting; handle with care)
   remove <name> [--force] Delete a profile and its Keychain entry
   doctor [dir]            Diagnose overriding env vars, expiry, token liveness,
@@ -55,6 +57,9 @@ async function main(): Promise<number> {
       return (await import("./commands/link.js")).linkCommand(rest);
     case "unlink":
       return (await import("./commands/unlink.js")).unlinkCommand(rest);
+    case "which":
+    case "whoami":
+      return (await import("./commands/which.js")).whichCommand(rest);
     case "token":
       return (await import("./commands/token.js")).tokenCommand(rest);
     case "doctor":
