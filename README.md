@@ -67,17 +67,52 @@ Repeat with `ccprofile add personal` etc. Different terminals in different direc
 
 ```sh
 ccprofile whoami   # which account does *this* shell/directory resolve to? (instant, no network)
-ccprofile usage    # per-account plan utilization + reset times, straight from claude.ai
+ccprofile usage    # registered profiles: plan utilization, reset times, and retrieval status
 ```
 
 `ccprofile whoami` answers "who am I running as here?" from local signals only, in
 Claude Code's own precedence order: a provider override
 (`CLAUDE_CODE_USE_{BEDROCK,VERTEX,FOUNDRY}`) wins first if set, otherwise the
 exported `ANTHROPIC_AUTH_TOKEN` matched against your registered profiles, then the
-directory's `.envrc` link — so it returns immediately. `ccprofile usage` decrypts your Chrome claude.ai session cookies
-to fetch the real 5-hour / weekly / Fable-weekly utilization for every signed-in
-account, ordered by whichever weekly limit resets soonest — without opening or
-switching the browser (you just need to be signed in to claude.ai in Chrome).
+directory's `.envrc` link — so it returns immediately.
+
+`ccprofile usage` shows every registered profile from `ccprofile list`. It
+decrypts Chrome's claude.ai session cookies and matches the account email
+returned by claude.ai to the registered email, ignoring case. Matching accounts
+show their real 5-hour / weekly / Fable-weekly utilization without opening or
+switching the browser. Successful rows appear first, ordered by the weekly
+reset time; remaining rows follow in profile-name order.
+
+`STATUS` distinguishes `OK`, `ERROR` (including an HTTP code when available),
+`NO MATCH: matching Chrome session not detected`, and `NO EMAIL: registered
+email is missing`. Unavailable utilization is shown as `-`. `NO MATCH` means no
+API-identified Chrome result matched the registered email; it does not establish
+that the account is logged out. The `ACCOUNT` value on an unmatched row is the
+registered email label, not an identity verified by the API. Every registered
+name remains a separate row even when multiple names share the same email. If
+multiple Chrome sessions match, a successful result is preferred.
+
+Unregistered accounts and errors that cannot be assigned to a registered
+profile appear under **Other Chrome results**. A failure before the API returns
+an account email cannot be assigned by guessing from Chrome's own name or
+Google account. Unused failed Chrome sessions also remain in this section;
+successful duplicates for registered accounts and Chrome profiles with no
+claude.ai session are omitted from it. Missing Chrome data or a failure to read
+the Chrome encryption key is displayed as `ERROR` for every registered profile.
+
+`--json` returns an array with registered rows in profile-name order followed by
+other Chrome results in Chrome order. Each row contains `profile`, `chromeProfile`,
+`chromeDir`, `email`, `error`, `usage`, and `status`. `status` is `ok`, `error`,
+`no_match`, or `no_email`; `error` is populated only for `error`, and unavailable
+`usage` is `null`. Unmatched registered rows have null Chrome fields; other
+Chrome results have `profile: null`. Retrieval errors exit with status 1;
+`no_match` and `no_email` alone exit with status 0.
+
+Requests use Chrome's stored session cookies, a User-Agent based on the local
+Chrome version, and matching desktop Client Hints and Fetch Metadata headers.
+Node.js sends the requests; these headers do not reproduce Chrome's TLS/HTTP
+stack or guarantee that claude.ai will accept them. An HTTP 403 indicates access
+was denied, without establishing whether the session or a browser check caused it.
 
 ## Commands
 
@@ -91,7 +126,7 @@ switching the browser (you just need to be signed in to claude.ai in Chrome).
 | `ccprofile token <name>` | Print the stored token to stdout (for scripting — handle with care) |
 | `ccprofile remove <name>` | Delete the profile and its Keychain entry |
 | `ccprofile doctor [dir]` | Diagnose provider overrides, stale/missing active token env, expiry, token liveness, usage limits (a minimal real inference per profile — fable first, haiku fallback), broken links. `--model <alias>` pins the probe model; `--offline` skips all server probes |
-| `ccprofile usage [--json]` | Per-account plan utilization (5-hour, weekly, and Fable-weekly) with reset times, read from claude.ai via your Chrome session — no browser open or switch needed |
+| `ccprofile usage [--json]` | Every registered profile's plan utilization (5-hour, weekly, and Fable-weekly), reset times, and retrieval status, matched to claude.ai accounts through Chrome session cookies |
 | `ccprofile completion <shell>` | Print a completion script for fish, zsh, or bash |
 
 ## Shell completion

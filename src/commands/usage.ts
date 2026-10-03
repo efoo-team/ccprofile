@@ -17,38 +17,27 @@ import {
   type UsageReport,
   type UsageWindow,
 } from "../lib/claudeai.js";
-import { loadConfig } from "../lib/config.js";
-import { bold, cyan, dim, fail, red, table, warn, yellow } from "../lib/format.js";
+import { loadConfig, type Config } from "../lib/config.js";
+import { bold, cyan, dim, fail, green, red, table, yellow } from "../lib/format.js";
 
 interface ProfileResult {
   profile: ChromeProfile;
   usage: AccountUsage;
 }
 
-/** A profile whose usage was fetched successfully (email + report available). */
-type SignedInResult = ProfileResult & { usage: Extract<AccountUsage, { ok: true }> };
+type RowStatus = "ok" | "error" | "no_match" | "no_email";
 
-/**
- * Maps a claude.ai account email to the ccprofile name registered for it, so a
- * signed-in Chrome account that matches a stored profile is labelled with that
- * profile's name. Matching is case-insensitive.
- */
-function profileNamesByEmail(): Map<string, string> {
-  const byEmail = new Map<string, string>();
-  try {
-    for (const [name, entry] of Object.entries(loadConfig().profiles)) {
-      if (entry.email) byEmail.set(entry.email.toLowerCase(), name);
-    }
-  } catch {
-    // A malformed/unsupported config.json shouldn't sink the usage table;
-    // profile labelling is auxiliary, so degrade to unlabelled accounts.
-  }
-  return byEmail;
+interface UsageRow {
+  profile: string | null;
+  email: string | null;
+  source: ProfileResult | null;
+  status: RowStatus;
+  detail: string | null;
 }
 
-function matchedProfileName(email: string | null, byEmail: Map<string, string>): string | null {
-  if (email === null) return null;
-  return byEmail.get(email.toLowerCase()) ?? null;
+interface UsageRows {
+  registered: UsageRow[];
+  other: UsageRow[];
 }
 
 export async function usageCommand(argv: string[]): Promise<number> {
@@ -58,47 +47,104 @@ export async function usageCommand(argv: string[]): Promise<number> {
   });
 
   assertDarwin();
+  // Registered profiles are the primary list, so a broken config must not
+  // silently turn this into a Chrome-only list.
+  const config = loadConfig();
 
   const userDataDir = chromeUserDataDir();
   const localStatePath = join(userDataDir, "Local State");
+  let results: ProfileResult[] = [];
+  let preparationError: string | null = null;
   if (!existsSync(localStatePath)) {
-    console.error(
-      fail(
-        "Google Chrome data not found. `ccprofile usage` reads claude.ai session cookies from Chrome.",
-      ),
-    );
-    return 1;
+    preparationError = "Google Chrome data not found; usage requires Chrome session cookies";
+  } else {
+    try {
+      const profiles = parseProfiles(readFileSync(localStatePath, "utf8")).filter((p) =>
+        existsSync(join(userDataDir, p.dir, "Cookies")),
+      );
+      // No cookie stores means no matches, without requiring a Keychain key.
+      if (profiles.length > 0) {
+        const key = await safeStorageKey();
+        const userAgent = chromeUserAgent(userDataDir);
+        const spinner = values.json
+          ? { stop: () => {} }
+          : startSpinner(`querying claude.ai for ${profiles.length} Chrome profile(s)…`);
+        try {
+          results = await Promise.all(
+            profiles.map((profile) => loadUsage(profile, userDataDir, key, userAgent)),
+          );
+        } finally {
+          spinner.stop();
+        }
+      }
+    } catch (error) {
+      preparationError = error instanceof Error ? error.message : String(error);
+    }
   }
 
-  let key: Buffer;
-  try {
-    key = await safeStorageKey();
-  } catch (error) {
-    console.error(fail(error instanceof Error ? error.message : String(error)));
-    return 1;
-  }
-
-  const userAgent = chromeUserAgent(userDataDir);
-  const profiles = parseProfiles(readFileSync(localStatePath, "utf8")).filter((p) =>
-    existsSync(join(userDataDir, p.dir, "Cookies")),
-  );
-
-  const spinner = values.json
-    ? { stop: () => {} }
-    : startSpinner(`querying claude.ai for ${profiles.length} Chrome profile(s)…`);
-  const results = await Promise.all(
-    profiles.map((profile) => loadUsage(profile, userDataDir, key, userAgent)),
-  );
-  spinner.stop();
-
-  const byEmail = profileNamesByEmail();
+  const rows = buildRows(config, results, preparationError);
+  const exitCode = preparationError !== null || hasRealFailure(results) ? 1 : 0;
 
   if (values.json) {
-    console.log(JSON.stringify(results.map((r) => toJson(r, byEmail)), null, 2));
-    return hasRealFailure(results) ? 1 : 0;
+    console.log(JSON.stringify([...rows.registered, ...rows.other].map(toJson), null, 2));
+  } else {
+    render(rows);
   }
+  if (preparationError !== null && rows.registered.length === 0) {
+    console.error(fail(preparationError));
+  }
+  return exitCode;
+}
 
-  return render(results, byEmail);
+/** Resolve verified API emails; Chrome's own account/name never proves identity. */
+function buildRows(config: Config, results: ProfileResult[], preparationError: string | null): UsageRows {
+  const names = Object.keys(config.profiles).sort();
+  const registeredEmails = new Set(
+    names.flatMap((name) => {
+      const email = config.profiles[name]!.email;
+      return email ? [email.toLowerCase()] : [];
+    }),
+  );
+  const selected = new Set<ProfileResult>();
+  const registered = names.map((name): UsageRow => {
+    const email = config.profiles[name]!.email || null;
+    const base = { profile: name, email, source: null };
+    if (preparationError !== null) {
+      return { ...base, status: "error", detail: preparationError };
+    }
+    if (email === null) {
+      return { ...base, status: "no_email", detail: "registered email is missing" };
+    }
+    const matches = results.filter((result) => result.usage.email?.toLowerCase() === email.toLowerCase());
+    // Prefer a usable session. Reuse it for every registered name with the
+    // same email; duplicates must never overwrite one another's profile row.
+    const source = matches.find((result) => result.usage.ok) ?? matches[0];
+    if (source === undefined) {
+      return { ...base, status: "no_match", detail: "matching Chrome session not detected" };
+    }
+    selected.add(source);
+    return {
+      profile: name,
+      email: source.usage.email ?? email,
+      source,
+      status: source.usage.ok ? "ok" : "error",
+      detail: source.usage.ok ? null : source.usage.detail,
+    };
+  });
+  const other = results.filter((result) => {
+    if (selected.has(result)) return false;
+    if (!result.usage.ok) return result.usage.detail !== NOT_SIGNED_IN;
+    // Successful duplicates are already represented by a registered row;
+    // keep unused failures visible, and retain unregistered successes.
+    return result.usage.email === null || !registeredEmails.has(result.usage.email.toLowerCase());
+  }).map((source): UsageRow => ({
+    profile: null,
+    email: source.usage.email ?? null,
+    source,
+    status: source.usage.ok ? "ok" : "error",
+    detail: source.usage.ok ? null : source.usage.detail,
+  }));
+  return { registered, other };
 }
 
 /**
@@ -126,43 +172,34 @@ async function loadUsage(
   }
 }
 
-function render(results: ProfileResult[], byEmail: Map<string, string>): number {
-  const signedIn: SignedInResult[] = [];
-  const problems: string[] = [];
-  for (const { profile, usage } of results) {
-    if (usage.ok) {
-      signedIn.push({ profile, usage });
-    } else if (usage.detail !== NOT_SIGNED_IN) {
-      // A missing session is expected for stray Chrome profiles; only real
-      // failures (expired session, Cloudflare block) are worth surfacing.
-      problems.push(warn(`${profile.name}: ${usage.detail}`));
-    }
+function render(rows: UsageRows): void {
+  const header = ["PROFILE", "ACCOUNT", "CHROME", "5-HOUR", "WEEK · ALL", "FABLE · WEEK", "STATUS"].map(bold);
+  if (rows.registered.length > 0) {
+    console.log(table([header, ...sortByWeeklyReset(rows.registered).map(tableRow)]));
+  } else {
+    console.log(dim("No profiles yet. Create one with `ccprofile add <name>`."));
   }
-
-  const header = ["PROFILE", "ACCOUNT", "CHROME", "5-HOUR", "WEEK · ALL", "FABLE · WEEK"].map(bold);
-  const rows: string[][] = [header];
-  for (const { profile, usage } of sortByWeeklyReset(signedIn)) {
-    const name = matchedProfileName(usage.email, byEmail);
-    rows.push([
-      name === null ? dim("-") : cyan(name),
-      usage.email ?? dim("(unknown)"),
-      dim(profile.name),
-      windowCell(usage.report.session),
-      windowCell(usage.report.weeklyAll),
-      windowCell(usage.report.fable),
-    ]);
+  if (rows.other.length > 0) {
+    console.log(`\n${bold("Other Chrome results (not assigned to a registered profile)")}`);
+    console.log(table([header, ...sortByWeeklyReset(rows.other).map(tableRow)]));
   }
+}
 
-  if (rows.length === 1 && problems.length === 0) {
-    console.log(
-      dim("No claude.ai sessions found in Chrome. Sign in at https://claude.ai and retry."),
-    );
-    return 0;
-  }
-
-  if (rows.length > 1) console.log(table(rows));
-  for (const problem of problems) console.log(problem);
-  return problems.length > 0 ? 1 : 0;
+function tableRow(row: UsageRow): string[] {
+  const usage = row.source?.usage;
+  const report = usage?.ok ? usage.report : null;
+  const status = row.status === "ok" ? green("OK")
+    : row.status === "error" ? red(`ERROR ${row.detail}`)
+    : yellow(`${row.status === "no_email" ? "NO EMAIL" : "NO MATCH"}: ${row.detail}`);
+  return [
+    row.profile === null ? dim("-") : cyan(row.profile),
+    row.email ?? dim("(unknown)"),
+    row.source === null ? dim("-") : dim(row.source.profile.name),
+    windowCell(report?.session ?? null),
+    windowCell(report?.weeklyAll ?? null),
+    windowCell(report?.fable ?? null),
+    status,
+  ];
 }
 
 /**
@@ -170,10 +207,17 @@ function render(results: ProfileResult[], byEmail: Map<string, string>): number 
  * nearest reset first, the furthest last. Accounts with no weekly window sort
  * to the end so a resolved figure never sits below a blank one.
  */
-function sortByWeeklyReset(results: SignedInResult[]): SignedInResult[] {
-  const resetKey = (r: SignedInResult): number =>
-    r.usage.report.weeklyAll?.resetsAt?.getTime() ?? Number.MAX_SAFE_INTEGER;
-  return [...results].sort((a, b) => resetKey(a) - resetKey(b));
+function sortByWeeklyReset(results: UsageRow[]): UsageRow[] {
+  const resetKey = (r: UsageRow): number => {
+    const usage = r.source?.usage;
+    return usage?.ok ? usage.report.weeklyAll?.resetsAt?.getTime() ?? Number.MAX_SAFE_INTEGER
+      : Number.MAX_SAFE_INTEGER;
+  };
+  return [...results].sort((a, b) => {
+    if (a.status === "ok" && b.status !== "ok") return -1;
+    if (a.status !== "ok" && b.status === "ok") return 1;
+    return resetKey(a) - resetKey(b);
+  });
 }
 
 function windowCell(window: UsageWindow | null): string {
@@ -200,16 +244,16 @@ function formatReset(date: Date): string {
   return `${md} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function toJson(result: ProfileResult, byEmail: Map<string, string>): Record<string, unknown> {
-  const { profile, usage } = result;
-  const email = usage.ok ? usage.email : null;
+function toJson(row: UsageRow): Record<string, unknown> {
+  const usage = row.source?.usage;
   return {
-    profile: matchedProfileName(email, byEmail),
-    chromeProfile: profile.name,
-    chromeDir: profile.dir,
-    email,
-    error: usage.ok ? null : usage.detail,
-    usage: usage.ok ? serializeReport(usage.report) : null,
+    profile: row.profile,
+    chromeProfile: row.source?.profile.name ?? null,
+    chromeDir: row.source?.profile.dir ?? null,
+    email: row.email,
+    error: row.status === "error" ? row.detail : null,
+    usage: usage?.ok ? serializeReport(usage.report) : null,
+    status: row.status,
   };
 }
 

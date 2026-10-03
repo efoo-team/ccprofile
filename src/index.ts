@@ -30,7 +30,7 @@ ${bold("Commands")}
       --offline           usage limits (real inference probe), and broken links
       --model <alias>     --offline skips probes; --model pins the probe model
                           (default: fable, then haiku to isolate fable limits)
-  usage [--json]          Show claude.ai usage per account: 5-hour, weekly, and
+  usage [--json]          Show claude.ai usage for registered profiles: 5-hour, weekly, and
                           Fable-weekly percent + reset. Reads Chrome session
                           cookies — no browser open or switch required
   completion <shell>      Print a completion script (fish, zsh, bash)

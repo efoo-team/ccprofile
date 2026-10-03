@@ -50,13 +50,26 @@ export const defaultJsonFetcher: JsonFetcher = async (url, headers) => {
 };
 
 export function buildHeaders(cookieHeader: string, userAgent: string): Record<string, string> {
-  return {
+  const headers: Record<string, string> = {
     Cookie: cookieHeader,
     "User-Agent": userAgent,
     "anthropic-client-platform": "web_claude_ai",
     Referer: "https://claude.ai/",
     Accept: "*/*",
+    "Sec-Fetch-Site": "same-origin",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Dest": "empty",
   };
+  // Match the Chrome UA's version rather than maintaining a second version
+  // source. These low-entropy hints describe our desktop macOS Chrome UA;
+  // they do not reproduce Chrome's TLS/HTTP stack or its GREASE brand.
+  const major = /Chrome\/(\d+)\./.exec(userAgent)?.[1];
+  if (major !== undefined && userAgent.includes("Macintosh")) {
+    headers["Sec-CH-UA"] = `"Chromium";v="${major}", "Google Chrome";v="${major}"`;
+    headers["Sec-CH-UA-Mobile"] = "?0";
+    headers["Sec-CH-UA-Platform"] = '"macOS"';
+  }
+  return headers;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -139,12 +152,12 @@ export const NOT_SIGNED_IN = "not signed in to claude.ai";
 
 export type AccountUsage =
   | { ok: true; email: string | null; report: UsageReport }
-  | { ok: false; status: number; detail: string };
+  | { ok: false; status: number; detail: string; email?: string | null };
 
 function describeStatus(status: number): string {
-  if (status === 401) return "session expired — sign in again in Chrome";
-  if (status === 403) return "blocked (session expired or Cloudflare challenge)";
-  if (status === 429) return "rate limited by claude.ai";
+  if (status === 401) return "HTTP 401: session expired — sign in again in Chrome";
+  if (status === 403) return "HTTP 403: access denied by claude.ai";
+  if (status === 429) return "HTTP 429: rate limited by claude.ai";
   return `claude.ai returned HTTP ${status}`;
 }
 
@@ -171,18 +184,19 @@ export async function fetchAccountUsage(
     .join("; ");
   const headers = buildHeaders(cookieHeader, userAgent);
 
+  let email: string | null = null;
   try {
     const boot = await fetcher("https://claude.ai/api/bootstrap", headers);
     if (boot.status !== 200) {
       return { ok: false, status: boot.status, detail: describeStatus(boot.status) };
     }
-    const email = extractEmail(boot.body);
+    email = extractEmail(boot.body);
     const usage = await fetcher(
       `https://claude.ai/api/organizations/${encodeURIComponent(org)}/usage`,
       headers,
     );
     if (usage.status !== 200) {
-      return { ok: false, status: usage.status, detail: describeStatus(usage.status) };
+      return { ok: false, status: usage.status, detail: describeStatus(usage.status), email };
     }
     return { ok: true, email, report: parseUsage(usage.body) };
   } catch (error) {
@@ -190,6 +204,7 @@ export async function fetchAccountUsage(
       ok: false,
       status: 0,
       detail: error instanceof Error ? error.message : String(error),
+      email,
     };
   }
 }

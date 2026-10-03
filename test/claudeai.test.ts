@@ -5,6 +5,7 @@ import {
   parseUsage,
   type JsonFetcher,
 } from "../src/lib/claudeai.js";
+import { buildUserAgent } from "../src/lib/chrome.js";
 
 // Trimmed from a real /organizations/{id}/usage response.
 const SAMPLE_USAGE = {
@@ -104,6 +105,25 @@ describe("buildHeaders", () => {
     expect(headers.Cookie).toBe("sessionKey=abc");
     expect(headers["anthropic-client-platform"]).toBe("web_claude_ai");
     expect(headers["User-Agent"]).toBe("UA/1.0");
+    expect(headers["Sec-Fetch-Site"]).toBe("same-origin");
+    expect(headers["Sec-Fetch-Mode"]).toBe("cors");
+    expect(headers["Sec-Fetch-Dest"]).toBe("empty");
+    expect(headers).not.toHaveProperty("Origin");
+    expect(headers).not.toHaveProperty("Sec-CH-UA");
+  });
+
+  it("keeps desktop client hints consistent with the Chrome User-Agent", () => {
+    const headers = buildHeaders("sessionKey=abc", buildUserAgent("154.0.8037.93"));
+    expect(headers["Sec-CH-UA"]).toBe('"Chromium";v="154", "Google Chrome";v="154"');
+    expect(headers["Sec-CH-UA-Mobile"]).toBe("?0");
+    expect(headers["Sec-CH-UA-Platform"]).toBe('"macOS"');
+    expect(headers["User-Agent"]).toContain("Chrome/154.0.0.0");
+  });
+
+  it("uses the same fallback version for the User-Agent and client hints", () => {
+    const headers = buildHeaders("sessionKey=abc", buildUserAgent(null));
+    const major = /Chrome\/(\d+)\./.exec(headers["User-Agent"] ?? "")?.[1];
+    expect(headers["Sec-CH-UA"]).toContain(`"Google Chrome";v="${major}"`);
   });
 });
 
@@ -156,7 +176,10 @@ describe("fetchAccountUsage", () => {
     const fetcher: JsonFetcher = async () => ({ status: 403, body: null });
     const result = await fetchAccountUsage(cookies, "UA", fetcher);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.status).toBe(403);
+    if (!result.ok) {
+      expect(result.status).toBe(403);
+      expect(result.detail).toBe("HTTP 403: access denied by claude.ai");
+    }
   });
 
   it("surfaces a non-200 usage endpoint after a successful bootstrap", async () => {
@@ -166,7 +189,25 @@ describe("fetchAccountUsage", () => {
         : { status: 500, body: null };
     const result = await fetchAccountUsage(cookies, "UA", fetcher);
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.status).toBe(500);
+    if (!result.ok) {
+      expect(result.status).toBe(500);
+      expect(result.email).toBe("you@example.com");
+    }
+  });
+
+  it("retains the account email if the usage request throws after bootstrap", async () => {
+    const fetcher: JsonFetcher = async (url) => {
+      if (url.endsWith("/bootstrap")) {
+        return { status: 200, body: { account: { email_address: "you@example.com" } } };
+      }
+      throw new Error("The operation was aborted due to timeout");
+    };
+    expect(await fetchAccountUsage(cookies, "UA", fetcher)).toMatchObject({
+      ok: false,
+      status: 0,
+      email: "you@example.com",
+      detail: "The operation was aborted due to timeout",
+    });
   });
 
   it("converts a thrown fetch (e.g. timeout) into a failure instead of rejecting", async () => {

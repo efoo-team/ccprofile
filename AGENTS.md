@@ -71,6 +71,23 @@ env var falls back to the normal login. See
     touches the setup-token and spends no quota. Cookie decryption lives in
     `src/lib/chrome.ts`; the API client in `src/lib/claudeai.ts`. Both take
     injectable runners/fetchers so tests never hit the real browser or network.
+    Requests use a locally versioned Chrome User-Agent and consistent desktop
+    Client Hints/Fetch Metadata, but still use Node's fetch rather than Chrome's
+    TLS/HTTP stack; header matching does not guarantee access. The primary usage
+    table includes every registered profile, matching registered emails against
+    API-returned account emails case-insensitively. Duplicate registered emails
+    retain separate profile rows; multiple matching Chrome sessions prefer a
+    successful result. Successful rows sort by weekly reset, ahead of unfilled
+    rows. NO MATCH means no API-identified matching result, not proof of logout;
+    NO EMAIL means the registration lacks an email. ERROR retains retrieval
+    failures (and HTTP codes), preserving the email if bootstrap succeeded.
+    Unassigned Chrome errors and unregistered successes remain in a separate
+    Other Chrome results table. Never infer the cause of a 403 or a claude.ai
+    account identity from Chrome's profile metadata. JSON is an array of
+    registered rows in name order, then other Chrome results in Chrome order,
+    with explicit ok/error/no_match/no_email status and nullable Chrome fields.
+    Global Chrome/key-read errors retain every registered row as ERROR.
+    Retrieval errors exit non-zero; NO MATCH/NO EMAIL alone do not.
   - `src/lib/probe.ts` exploits this: `permission_error` mentioning "scope"
     proves the token authenticated → **alive**; `authentication_error`/401 →
     revoked. An HTTP 200 + email branch exists for graceful handling but is not
