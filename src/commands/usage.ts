@@ -16,9 +16,10 @@ import {
   type AccountUsage,
   type UsageReport,
   type UsageWindow,
+  type Severity,
 } from "../lib/claudeai.js";
 import { loadConfig, type Config } from "../lib/config.js";
-import { bold, cyan, dim, fail, green, red, table, yellow } from "../lib/format.js";
+import { bold, cyan, dim, displayWidth, fail, green, red, table, yellow } from "../lib/format.js";
 
 interface ProfileResult {
   profile: ChromeProfile;
@@ -43,7 +44,10 @@ interface UsageRows {
 export async function usageCommand(argv: string[]): Promise<number> {
   const { values } = parseArgs({
     args: argv,
-    options: { json: { type: "boolean", default: false } },
+    options: {
+      json: { type: "boolean", default: false },
+      calendar: { type: "boolean", default: false },
+    },
   });
 
   assertDarwin();
@@ -87,6 +91,8 @@ export async function usageCommand(argv: string[]): Promise<number> {
 
   if (values.json) {
     console.log(JSON.stringify([...rows.registered, ...rows.other].map(toJson), null, 2));
+  } else if (values.calendar) {
+    renderCalendar(rows);
   } else {
     render(rows);
   }
@@ -273,6 +279,164 @@ function serializeReport(report: UsageReport): Record<string, unknown> {
  * Minimal TTY-only spinner for the network wait; stays silent when output is
  * piped so scripted/`--json` runs keep clean output.
  */
+/**
+ * Calendar view (opt-in via --calendar): groups each account's next reset times
+ * by local day so it is easy to see which account becomes usable when.
+ */
+interface ResetEvent {
+  profile: string;
+  window: "5-hour" | "weekly" | "fable";
+  percent: number;
+  severity: Severity;
+  resetsAt: Date;
+}
+
+function collectResetEvents(rows: UsageRows): ResetEvent[] {
+  const events: ResetEvent[] = [];
+  for (const row of rows.registered) {
+    if (row.status !== "ok" || row.profile === null || row.source?.usage?.ok !== true) continue;
+    const report = row.source.usage.report;
+    const windows: { key: "session" | "weeklyAll" | "fable"; label: ResetEvent["window"] }[] = [
+      { key: "session", label: "5-hour" },
+      { key: "weeklyAll", label: "weekly" },
+      { key: "fable", label: "fable" },
+    ];
+    for (const w of windows) {
+      const win = report[w.key];
+      if (win === null || win.resetsAt === null) continue;
+      // Weekly (wk) is the scarce, slow-resetting budget: show it always.
+      // 5-hour / fable only matter when actually exhausted (100%).
+      const isWeekly = w.label === "weekly";
+      if (!isWeekly && win.percent < 100) continue;
+      events.push({
+          profile: row.profile,
+          window: w.label,
+          percent: win.percent,
+          severity: win.severity,
+          resetsAt: win.resetsAt,
+        });
+    }
+  }
+  return events;
+}
+
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function colorPercentForCalendar(percent: number, severity: Severity): string {
+  const text = `${String(percent).padStart(3, " ")}%`;
+  if (severity === "critical" || percent >= 90) return red(text);
+  if (severity === "warning" || percent >= 80) return yellow(text);
+  return text;
+}
+
+function renderCalendar(rows: UsageRows): void {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const days: Date[] = [];
+  for (let i = 0; i < 7; i++) days.push(new Date(today.getTime() + i * 86400000));
+  const end = new Date(today.getTime() + 7 * 86400000);
+
+  const events = collectResetEvents(rows);
+  const weekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const winAbbr: Record<ResetEvent["window"], string> = { "5-hour": "5h", weekly: "wk", fable: "fb" };
+
+  // cellLines[hour][day] = list of event display strings for that (hour, day)
+  const cellLines: string[][][] = Array.from({ length: 24 }, () => days.map(() => [] as string[]));
+  const later: ResetEvent[] = [];
+  for (const ev of events) {
+    if (ev.resetsAt < now) continue; // already reset
+    if (ev.resetsAt >= end) {
+      later.push(ev);
+      continue;
+    }
+    const dayIdx = Math.floor((ev.resetsAt.getTime() - today.getTime()) / 86400000);
+    if (dayIdx < 0 || dayIdx >= 7) continue;
+    const hour = ev.resetsAt.getHours();
+    const time = `${pad2(ev.resetsAt.getHours())}:${pad2(ev.resetsAt.getMinutes())}`;
+    const pct = colorPercentForCalendar(ev.percent, ev.severity);
+    cellLines[hour]![dayIdx]!.push(`${time} ${cyan(ev.profile)} ${winAbbr[ev.window]} ${pct}`);
+  }
+
+  const timeLabelWidth = 6;
+  const colWidth = 26;
+
+  const padCell = (text: string | undefined): string => {
+    if (text === undefined) return dim("·".padStart(Math.floor((colWidth + 1) / 2), " ").padEnd(colWidth, " "));
+    const padding = Math.max(0, colWidth - displayWidth(text));
+    return text + " ".repeat(padding);
+  };
+
+  const hLine = (left: string, mid: string, right: string, fill: string): string =>
+    left + fill.repeat(timeLabelWidth) + mid + days.map(() => fill.repeat(colWidth)).join(mid) + right;
+
+  const lines: string[] = [];
+  lines.push(bold("📅  Reset calendar  ·  next 7 days  (hours × days)"));
+  lines.push(dim("   which account becomes usable, and when its limits reset"));
+  lines.push("");
+
+  // top border
+  lines.push(dim(hLine("┌", "┬", "┐", "─")));
+  // header row
+  const headerCells = days.map((d, i) => {
+    const label = `${weekdayNames[d.getDay()]} ${d.getMonth() + 1}/${d.getDate()}`;
+    const isToday = i === 0;
+    const padLeft = Math.floor((colWidth - displayWidth(label)) / 2);
+    const padRight = colWidth - displayWidth(label) - padLeft;
+    const padded = " ".repeat(Math.max(0, padLeft)) + label + " ".repeat(Math.max(0, padRight));
+    return isToday ? cyan(bold(padded)) : bold(padded);
+  });
+  lines.push(dim("│") + " ".repeat(timeLabelWidth) + dim("│") + headerCells.join(dim("│")) + dim("│"));
+  lines.push(dim(hLine("├", "┼", "┤", "─")));
+
+  const activeHours = Array.from({ length: 24 }, (_, h) => h).filter((h) =>
+    cellLines[h]!.some((c) => c.length > 0),
+  );
+  if (activeHours.length === 0) {
+    lines.push(dim("│") + dim("  no 100% limits scheduled in the next 7 days".padEnd(timeLabelWidth + colWidth * 7 + 7)) + dim("│"));
+  } else {
+    activeHours.forEach((h, idx) => {
+      const rowCells = cellLines[h]!;
+      const maxLines = Math.max(1, ...rowCells.map((c) => c.length));
+      for (let li = 0; li < maxLines; li++) {
+        const label = li === 0 ? bold(`${pad2(h)}:00`.padEnd(timeLabelWidth)) : " ".repeat(timeLabelWidth);
+        const cellStrs = rowCells.map((c) => padCell(c[li]));
+        lines.push(dim("│") + label + dim("│") + cellStrs.join(dim("│")) + dim("│"));
+      }
+      if (idx < activeHours.length - 1) {
+        lines.push(dim(hLine("├", "┼", "┤", "─")));
+      }
+    });
+  }
+  lines.push(dim(hLine("└", "┴", "┘", "─")));
+
+  lines.push("");
+  lines.push(dim("Legend: 5h = 5-hour window   wk = weekly (all models)   fb = Fable-weekly"));
+  lines.push(dim("        colors: ") + red("red ≥90% / critical") + dim("  ·  ") + yellow("yellow ≥80% / warning"));
+
+  if (later.length > 0) {
+    lines.push("");
+    lines.push(bold("🗓  Later (beyond 7 days)"));
+    for (const ev of later.sort((a, b) => a.resetsAt.getTime() - b.resetsAt.getTime())) {
+      const time = `${pad2(ev.resetsAt.getHours())}:${pad2(ev.resetsAt.getMinutes())}`;
+      const pct = colorPercentForCalendar(ev.percent, ev.severity);
+      lines.push(
+        `  ${formatReset(ev.resetsAt)} ${time}  ${cyan(ev.profile.padEnd(8))}  ${winAbbr[ev.window].padEnd(3)}  ${pct}`,
+      );
+    }
+  }
+  if (events.length === 0) {
+    lines.push("");
+    lines.push(dim("No weekly resets and no exhausted limits in the next 7 days."));
+  }
+  console.log(lines.join("\n"));
+}
+
 function startSpinner(text: string): { stop(): void } {
   if (!process.stdout.isTTY) return { stop: () => {} };
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];

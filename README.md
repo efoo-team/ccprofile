@@ -126,7 +126,7 @@ was denied, without establishing whether the session or a browser check caused i
 | `ccprofile token <name>` | Print the stored token to stdout (for scripting — handle with care) |
 | `ccprofile remove <name>` | Delete the profile and its Keychain entry |
 | `ccprofile doctor [dir]` | Diagnose provider overrides, stale/missing active token env, expiry, token liveness, usage limits (a minimal real inference per profile — fable first, haiku fallback), broken links. `--model <alias>` pins the probe model; `--offline` skips all server probes |
-| `ccprofile usage [--json]` | Every registered profile's plan utilization (5-hour, weekly, and Fable-weekly), reset times, and retrieval status, matched to claude.ai accounts through Chrome session cookies |
+| `ccprofile usage [--json] [--calendar]` | Every registered profile's plan utilization (5-hour, weekly, and Fable-weekly), reset times, and retrieval status, matched to claude.ai accounts through Chrome session cookies. `--calendar` prints a 7-day grid of when each account's limits reset |
 | `ccprofile completion <shell>` | Print a completion script for fish, zsh, or bash |
 
 ## Shell completion

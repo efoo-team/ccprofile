@@ -31,7 +31,8 @@ ${bold("Commands")}
       --model <alias>     --offline skips probes; --model pins the probe model
                           (default: fable, then haiku to isolate fable limits)
   usage [--json]          Show claude.ai usage for registered profiles: 5-hour, weekly, and
-                          Fable-weekly percent + reset. Reads Chrome session
+      [--calendar]          Fable-weekly percent + reset. --calendar prints a 7-day grid
+                          of when each account's limits reset. Reads Chrome session
                           cookies — no browser open or switch required
   completion <shell>      Print a completion script (fish, zsh, bash)
 
